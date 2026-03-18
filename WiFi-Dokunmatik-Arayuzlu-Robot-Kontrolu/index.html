@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Araba Kontrolü</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      background-color: #1e1e2e;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+
+    .container {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #status {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 18px;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    #joystick-container {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      background-color: rgba(255, 255, 255, 0.1);
+      border: 3px solid #64b5f6;
+      border-radius: 50%;
+      box-shadow: 0 0 15px rgba(100, 181, 246, 0.5), 
+                  inset 0 0 30px rgba(100, 181, 246, 0.3);
+    }
+
+    #joystick-base {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+    }
+
+    #car {
+      position: absolute;
+      width: 50px;
+      height: 80px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(0deg);
+      transform-origin: center center;
+      transition: transform 0.05s ease-out;
+    }
+
+    #car svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    #download-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 99;
+      padding: 10px 15px;
+      background-color: #64b5f6;
+      color: #1e1e2e;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s;
+    }
+
+    #download-btn:hover {
+      background-color: #90caf9;
+      transform: translateY(-2px);
+    }
+
+    #download-btn:active {
+      transform: translateY(0px);
+    }
+
+    .direction-label {
+      position: absolute;
+      color: rgba(255, 255, 255, 0.7);
+      font-weight: bold;
+    }
+
+    #label-up { top: -25px; left: 50%; transform: translateX(-50%); }
+    #label-down { bottom: -25px; left: 50%; transform: translateX(-50%); }
+    #label-left { left: -25px; top: 50%; transform: translateY(-50%); }
+    #label-right { right: -25px; top: 50%; transform: translateY(-50%); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="status">Bağlanıyor...</div>
+    <div id="joystick-container">
+      <div class="direction-label" id="label-up">İLERİ</div>
+      <div class="direction-label" id="label-down">GERİ</div>
+      <div class="direction-label" id="label-left">SOL</div>
+      <div class="direction-label" id="label-right">SAĞ</div>
+      <div id="joystick-base"></div>
+      <div id="car">
+        <svg viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+          <!-- Araba gövdesi -->
+          <rect x="20" y="30" width="60" height="100" rx="15" fill="#f44336" />
+          <!-- Ön cam -->
+          <path d="M30 40 L70 40 L65 20 L35 20 Z" fill="#90caf9" />
+          <!-- Farlar -->
+          <rect x="25" y="125" width="15" height="5" rx="2" fill="#ffeb3b" />
+          <rect x="60" y="125" width="15" height="5" rx="2" fill="#ffeb3b" />
+          <!-- Tekerler -->
+          <rect x="10" y="60" width="10" height="25" rx="3" fill="#212121" />
+          <rect x="80" y="60" width="10" height="25" rx="3" fill="#212121" />
+          <rect x="10" y="100" width="10" height="25" rx="3" fill="#212121" />
+          <rect x="80" y="100" width="10" height="25" rx="3" fill="#212121" />
+        </svg>
+      </div>
+    </div>
+  </div>
+  <button id="download-btn" onclick="downloadVeri()">Veriyi İndir</button>
+
+  <script>
+    const car = document.getElementById('car');
+    const joystickContainer = document.getElementById('joystick-container');
+    const statusElement = document.getElementById('status');
+    const joystickRect = joystickContainer.getBoundingClientRect();
+    const containerCenter = {
+      x: joystickRect.left + joystickRect.width / 2,
+      y: joystickRect.top + joystickRect.height / 2
+    };
+    const radius = joystickRect.width / 2;
+    
+    let veriler = [];
+    let dragStartX = null;
+    let dragStartY = null;
+    let isDragging = false;
+    let currentDirection = null;
+    let isConnected = false;
+
+    // Sayfa yüklendikten sonra başlangıç pozisyonunu ayarla
+    window.addEventListener('load', () => {
+      // Joystick konteynerinin pozisyonunu güncelle
+      const updatedRect = joystickContainer.getBoundingClientRect();
+      containerCenter.x = updatedRect.left + updatedRect.width / 2;
+      containerCenter.y = updatedRect.top + updatedRect.height / 2;
+      
+      // Arabayı merkeze yerleştir
+      car.style.top = `${containerCenter.y}px`;
+      car.style.left = `${containerCenter.x}px`;
+      
+      // ESP bağlantısını kontrol et
+      checkConnection();
+    });
+
+    // Pencere boyutu değiştiğinde merkezleri güncelle
+    window.addEventListener('resize', () => {
+      const updatedRect = joystickContainer.getBoundingClientRect();
+      containerCenter.x = updatedRect.left + updatedRect.width / 2;
+      containerCenter.y = updatedRect.top + updatedRect.height / 2;
+      
+      // Arabayı merkeze yerleştir
+      car.style.top = `${containerCenter.y}px`;
+      car.style.left = `${containerCenter.x}px`;
+    });
+
+    function checkConnection() {
+      fetch('http://192.168.4.1/').then(response => {
+        if (response.ok) {
+          showStatus('Bağlandı!', true);
+          isConnected = true;
+        }
+      }).catch(error => {
+        showStatus('Bağlantı hatası!', false);
+        isConnected = false;
+      });
+    }
+
+    function showStatus(message, success) {
+      statusElement.textContent = message;
+      statusElement.style.backgroundColor = success ? 'rgba(76, 175, 80, 0.8)' : 'rgba(244, 67, 54, 0.8)';
+      statusElement.style.opacity = '1';
+      
+      setTimeout(() => {
+        statusElement.style.opacity = '0';
+      }, 2000);
+    }
+
+    function updateCar(x, y) {
+      const dx = x - containerCenter.x;
+      const dy = y - containerCenter.y;
+      
+      // Uzaklığı hesapla
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Maksimum mesafe kontrolü
+      const maxDistance = radius - 25;
+      const actualDistance = Math.min(distance, maxDistance);
+      
+      // Açıyı hesapla
+      const angleRad = Math.atan2(dy, dx);
+      const angleDeg = angleRad * 180 / Math.PI;
+      
+      // Joystick sınırları içinde kalmak için pozisyonu sınırla
+      const newX = containerCenter.x + actualDistance * Math.cos(angleRad);
+      const newY = containerCenter.y + actualDistance * Math.sin(angleRad);
+      
+      // Arabayı güncelle
+      car.style.left = `${newX}px`;
+      car.style.top = `${newY}px`;
+      car.style.transform = `translate(-50%, -50%) rotate(${angleDeg + 90}deg)`;
+      
+      // Yönü belirle ve komutu gönder
+      const dir = getDirection(dx, dy, distance);
+      if (dir && dir !== currentDirection) {
+        currentDirection = dir;
+        if (isConnected) {
+          sendCommand(dir);
+        }
+      }
+      
+      return { dx, dy, dir };
+    }
+
+    // İyileştirilmiş yön algılama fonksiyonu
+    function getDirection(dx, dy, distance) {
+      // Eğer joystick merkeze çok yakınsa dur komutu gönder
+      if (distance < 30) {
+        return "stop";
+      }
+      
+      // Açıyı hesapla (-180 ile 180 arasında)
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      
+      // Açıya göre yönü belirle
+      if (angle > -30 && angle <= 30) {
+        return "right";
+      } else if (angle > 30 && angle <= 60) {
+        return "down-right";
+      } else if (angle > 60 && angle <= 120) {
+        return "down";
+      } else if (angle > 120 && angle <= 150) {
+        return "down-left";
+      } else if ((angle > 150 && angle <= 180) || (angle >= -180 && angle <= -150)) {
+        return "left";
+      } else if (angle > -150 && angle <= -120) {
+        return "up-left";
+      } else if (angle > -120 && angle <= -60) {
+        return "up";
+      } else if (angle > -60 && angle <= -30) {
+        return "up-right";
+      }
+      
+      return "stop";
+    }
+
+    function sendCommand(dir) {
+      fetch(`http://192.168.4.1/move?dir=${dir}`)
+        .then(res => console.log("Komut gönderildi:", dir))
+        .catch(err => {
+          console.error("Hata:", err);
+          checkConnection();
+        });
+    }
+
+    function kaydetVeri(startX, startY, endX, endY) {
+      const dx = endX - containerCenter.x;
+      const dy = endY - containerCenter.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const label = getDirection(dx, dy, distance);
+      
+      if (!label || label === "stop") return;
+      
+      veriler.push({ 
+        startX: startX - containerCenter.x, 
+        startY: startY - containerCenter.y, 
+        endX: endX - containerCenter.x, 
+        endY: endY - containerCenter.y, 
+        dx, 
+        dy, 
+        label 
+      });
+      
+      console.log("Veri kaydedildi:", veriler[veriler.length - 1]);
+    }
+
+    function downloadVeri() {
+      const blob = new Blob([JSON.stringify(veriler, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'joystick_verileri.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showStatus('Veriler indirildi!', true);
+    }
+
+    // Fare olayları
+    document.addEventListener('mousedown', (e) => {
+      if (isInsideJoystick(e.clientX, e.clientY)) {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        // İlk tıklamada arabayı hemen güncelle
+        updateCar(e.clientX, e.clientY);
+      }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      
+      // Fareyi bıraktığımızda arabayı merkeze geri getir
+      car.style.left = `${containerCenter.x}px`;
+      car.style.top = `${containerCenter.y}px`;
+      car.style.transform = 'translate(-50%, -50%) rotate(0deg)';
+      
+      // Durma komutu gönder
+      if (isConnected) {
+        sendCommand("stop");
+        currentDirection = "stop";
+      }
+      
+      kaydetVeri(dragStartX, dragStartY, e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      updateCar(e.clientX, e.clientY);
+    });
+
+    // Dokunmatik olaylar
+    document.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      if (isInsideJoystick(touch.clientX, touch.clientY)) {
+        e.preventDefault();
+        isDragging = true;
+        dragStartX = touch.clientX;
+        dragStartY = touch.clientY;
+        // İlk dokunuşta arabayı hemen güncelle
+        updateCar(touch.clientX, touch.clientY);
+      }
+    }, { passive: false });
+
+    document.addEventListener('touchend', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      
+      // Dokunmayı bıraktığımızda arabayı merkeze geri getir
+      car.style.left = `${containerCenter.x}px`;
+      car.style.top = `${containerCenter.y}px`;
+      car.style.transform = 'translate(-50%, -50%) rotate(0deg)';
+      
+      // Durma komutu gönder
+      if (isConnected) {
+        sendCommand("stop");
+        currentDirection = "stop";
+      }
+      
+      const touch = e.changedTouches[0];
+      kaydetVeri(dragStartX, dragStartY, touch.clientX, touch.clientY);
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      updateCar(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    // Bir noktanın joystick içinde olup olmadığını kontrol et
+    function isInsideJoystick(x, y) {
+      const dx = x - containerCenter.x;
+      const dy = y - containerCenter.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance <= radius;
+    }
+  </script>
+</body>
+</html>
