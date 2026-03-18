@@ -330,6 +330,5 @@ GND          ──────────►  GND
 
 Made with  WiFi +  ESP8266 +  Arduino
 
-*Kablolar çağı bitti — WiFi ile kontrol et!*
 
 </div>
